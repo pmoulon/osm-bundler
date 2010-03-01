@@ -1,0 +1,8 @@
+--photos=<text file with a list of photos or a directory with photos>
+	The only obligatory option
+
+--featureExtractor=<name of feature extractor, default value is siftvlfeat>
+	Two feature extractors are supported at the moment: siftvlfeat from VLFeat library and siftlowe for David Lowe's SIFT demo implementation
+
+--help
+	Print help and exit
