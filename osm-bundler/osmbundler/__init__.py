@@ -225,8 +225,14 @@ class OsmBundler():
         logging.info("\nPerforming bundle adjustment...")
         os.chdir(self.workDir)
         os.mkdir("bundle")
+        
+        # create options.txt
+        optionsFile = open("options.txt", "w")
+        optionsFile.writelines(defaults.bundlerOptions)
+        optionsFile.close()
+
         bundlerOutputFile = open("bundle/out", "w")
-        subprocess.call([bundlerExecutable, "list.txt", "--options_file", os.path.join(distrPath, "osmbundler/options.txt")], **dict(stdout=bundlerOutputFile))
+        subprocess.call([bundlerExecutable, "list.txt", "--options_file", "options.txt"], **dict(stdout=bundlerOutputFile))
         bundlerOutputFile.close()
         os.chdir(self.currentDir)
         logging.info("Finished!")
