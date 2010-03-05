@@ -11,7 +11,7 @@ class LoweSift(Sift):
     def __init__(self, distrDir):
         Sift.__init__(self, distrDir)
 
-    def extract(self, photo):
+    def extract(self, photo, photoInfo):
         photoFile = open("%s.jpg.pgm" % photo, "rb")
         siftTextFile = open("%s.key" % photo, "w")
         subprocess.call(self.executable, **dict(stdin=photoFile, stdout=siftTextFile))

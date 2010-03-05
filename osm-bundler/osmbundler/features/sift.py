@@ -17,5 +17,5 @@ class Sift(FeatureExtractor):
             self.executable = os.path.join(distrDir, self.linuxExecutable)
         logging.info("Sift executable path: %s" % self.executable)
 
-    def extract(self, photo):
+    def extract(self, photo, photoInfo):
         pass

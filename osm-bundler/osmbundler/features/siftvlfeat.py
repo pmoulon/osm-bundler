@@ -11,7 +11,7 @@ class VlfeatSift(Sift):
     def __init__(self, distrDir):
         Sift.__init__(self, distrDir)
 
-    def extract(self, photo):
+    def extract(self, photo, photoInfo):
         logging.info("\tExtracting features with the SIFT method from VLFeat library...")
         subprocess.call([self.executable, "%s.jpg.pgm" % photo, "-o", "%s.key" % photo])
         # perform conversion to David Lowe's format

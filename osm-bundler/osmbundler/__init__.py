@@ -49,6 +49,10 @@ class OsmBundler():
     
     # list of files with extracted features
     featuresListFile = None
+    
+    # information about each processed photo is stored in the following dictionary
+    # photo file name in self.workDir is used as the key in this dictionary
+    photoDict = {}
 
     def __init__(self):
         for attr in dir(defaults):
@@ -113,15 +117,21 @@ class OsmBundler():
             photos=[f for f in os.listdir(self.photosArg) if os.path.isfile(os.path.join(self.photosArg, f)) and os.path.splitext(f)[1].lower()==".jpg"]
             if len(photos)<3: raise Exception, "The directory with images should contain at least 3 .jpg photos"
             for photo in photos:
-                self._preparePhoto(self.photosArg, photo)
+                photoInfo = dict(dirname=self.photosArg, basename=photo)
+                self._preparePhoto(photoInfo)
         elif os.path.isfile(self.photosArg):
             # a file with a list of images
             photosFile = open(self.photosArg)
+            # an auxiliary dictionary to eliminate duplicated photos
+            _photoDict = {}
             for photo in photosFile:
                 photo = photo.rstrip()
                 if os.path.isfile(photo):
-                    dirname,basename = os.path.split(photo)
-                    self._preparePhoto(dirname,basename)
+                    if not photo in _photoDict:
+                        _photoDict[photo] = True
+                        dirname,basename = os.path.split(photo)
+                        photoInfo = dict(dirname=dirname, basename=basename)
+                        self._preparePhoto(photoInfo)
             photosFile.close()
 
         if self.featuresListFile: self.featuresListFile.close()
@@ -129,16 +139,19 @@ class OsmBundler():
         self.dbCursor.close()
 
 
-    def _preparePhoto(self, photoDir, photo):
+    def _preparePhoto(self, photoInfo):
+        photo = photoInfo['basename']
+        photoDir = photoInfo['dirname']
         logging.info("\nProcessing photo '%s':" % photo)
         inputFileName = os.path.join(photoDir, photo)
-        outputFileNameJpg = os.path.join(self.workDir, photo)
-        outputFileNamePgm = outputFileNameJpg + ".pgm"
+        photo = self._getPhotoCopyName(photo)
+        outputFileNameJpg = "%s.jpg" % os.path.join(self.workDir, photo)
+        outputFileNamePgm = "%s.pgm" % outputFileNameJpg
         # open photo
         photoHandle = Image.open(inputFileName)
         # get EXIF information as a dictionary
         exif = self._getExif(photoHandle)
-        self._calculateFocalDistance(photo, photoDir, exif)
+        self._calculateFocalDistance(photo, photoInfo, exif)
         
         # resize photo if necessary
         maxDimension = photoHandle.size[0]
@@ -150,14 +163,33 @@ class OsmBundler():
             photoHandle = photoHandle.resize((newWidth, newHeight))
             logging.info("\tCopy of the photo has been scaled down to %sx%s" % (newWidth,newHeight))
         
+        photoInfo['width'] = photoHandle.size[0]
+        photoInfo['height'] = photoHandle.size[1]
         
         photoHandle.save(outputFileNameJpg)
         photoHandle.convert("L").save(outputFileNamePgm)
+        
+        # put photoInfo to self.photoDict
+        self.photoDict[photo] = photoInfo
+        
         if self.matchingEngine.featureExtractionNeeded:
             self.extractFeatures(photo)
         os.remove(outputFileNamePgm)
-        
-        
+
+
+    def _getPhotoCopyName(self, photo):
+        # cut off the extension
+        photo = photo[:-4]
+        # replace spaces in the file name
+        photo = photo.replace(' ', '_')
+        # find a unique name
+        suffix = 1
+        while photo in self.photoDict:
+            photo = "%s_%s" % (photo, suffix)
+            suffix = suffix + 1
+        return photo
+
+
     def _getExif(self, photoHandle):
         exif = {}
         info = photoHandle._getexif()
@@ -168,7 +200,7 @@ class OsmBundler():
         if 'FocalLength' in exif: exif['FocalLength'] = float(exif['FocalLength'][0])/float(exif['FocalLength'][1])
         return exif
     
-    def _calculateFocalDistance(self, photo, photoDir, exif):
+    def _calculateFocalDistance(self, photo, photoInfo, exif):
         hasFocal = False
         if 'Make' in exif and 'Model' in exif:
             # check if have camera entry in the database
@@ -183,11 +215,11 @@ class OsmBundler():
                         if width<height: width = height
                         focalPixels = width * (focalLength / ccdWidth[0])
                         hasFocal = True
-                        self.bundlerListFile.write("%s 0 %s\n" % (photo,SCALE*focalPixels))
+                        self.bundlerListFile.write("%s.jpg 0 %s\n" % (photo,SCALE*focalPixels))
             else: logging.info("\tEntry for the camera '%s', '%s' does not exist in the camera database" % (exif['Make'], exif['Model']))
         if not hasFocal:
-            logging.info("\tCan't estimate focal length in pixels for the photo '%s'" % os.path.join(photoDir,photo))
-            self.bundlerListFile.writelines("%s\n" % photo)
+            logging.info("\tCan't estimate focal length in pixels for the photo '%s'" % os.path.join(photoInfo['dirname'],photoInfo['basename']))
+            self.bundlerListFile.writelines("%s.jpg\n" % photo)
 
 
     def initMatchingEngine(self):
@@ -209,9 +241,8 @@ class OsmBundler():
     def extractFeatures(self, photo):
         # let self.featureExtractor do its job
         os.chdir(self.workDir)
-        photoBaseName = os.path.splitext(photo)[0] # cut extension out
-        self.featureExtractor.extract(photoBaseName)
-        self.featuresListFile.write("%s.%s\n" % (photoBaseName, self.featureExtractor.fileExtension))
+        self.featureExtractor.extract(photo, self.photoDict[photo])
+        self.featuresListFile.write("%s.%s\n" % (photo, self.featureExtractor.fileExtension))
         os.chdir(self.currentDir)
     
     def matchFeatures(self):

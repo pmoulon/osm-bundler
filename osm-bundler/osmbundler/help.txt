@@ -6,3 +6,6 @@
 
 --help
 	Print help and exit
+
+--maxPhotoDimension=<maximum of width and height>
+	Copy of a photo will be scaled down if either width or height exceeds <maxPhotoDimension>. After scaling the maximum of width and height will be equal to <maxPhotoDimension>
