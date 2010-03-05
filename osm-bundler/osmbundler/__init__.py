@@ -148,7 +148,7 @@ class OsmBundler():
             newWidth = int(scale * photoHandle.size[0])
             newHeight = int(scale * photoHandle.size[1])
             photoHandle = photoHandle.resize((newWidth, newHeight))
-            logging.info("\tThe photo has been scaled down to %sx%s" % (newWidth,newHeight))
+            logging.info("\tCopy of the photo has been scaled down to %sx%s" % (newWidth,newHeight))
         
         
         photoHandle.save(outputFileNameJpg)
@@ -172,7 +172,7 @@ class OsmBundler():
         hasFocal = False
         if 'Make' in exif and 'Model' in exif:
             # check if have camera entry in the database
-            self.dbCursor.execute("select ccd_width from cameras where make=? and model=?", (exif['Make'],exif['Model']))
+            self.dbCursor.execute("select ccd_width from cameras where make=? and model=?", (exif['Make'].strip(),exif['Model'].strip()))
             ccdWidth = self.dbCursor.fetchone()
             if ccdWidth:
                 if 'FocalLength' in exif and 'ExifImageWidth' in exif and 'ExifImageHeight' in exif:
@@ -184,7 +184,7 @@ class OsmBundler():
                         focalPixels = width * (focalLength / ccdWidth[0])
                         hasFocal = True
                         self.bundlerListFile.write("%s 0 %s\n" % (photo,SCALE*focalPixels))
-            else: logging.info("\tEntry for the camera %s %s does not exist in the camera database" % (exif['Make'], exif['Model']))
+            else: logging.info("\tEntry for the camera '%s', '%s' does not exist in the camera database" % (exif['Make'], exif['Model']))
         if not hasFocal:
             logging.info("\tCan't estimate focal length in pixels for the photo '%s'" % os.path.join(photoDir,photo))
             self.bundlerListFile.writelines("%s\n" % photo)
