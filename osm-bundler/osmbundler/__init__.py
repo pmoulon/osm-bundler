@@ -13,6 +13,9 @@ from matching import *
 import features
 from features import *
 
+# a helper function to get list of photos from a directory
+def getPhotosFromDirectory(photoDir):
+    return [f for f in os.listdir(photoDir) if os.path.isfile(os.path.join(photoDir, f)) and os.path.splitext(f)[1].lower()==".jpg"]
 
 
 distrPath = os.path.dirname( os.path.abspath(sys.argv[0]) )
@@ -24,8 +27,14 @@ SCALE = 1.0
 bundlerListFileName = "list.txt"
 
 camerasDatabase = os.path.join(distrPath, "osmbundler/cameras/cameras.sqlite")
-commandLineLongFlags = ["photos=", "maxPhotoDimension=", "featureExtractor="]
-exifAttrs = dict(Model=True,Make=True,ExifImageWidth=True,ExifImageHeight=True,FocalLength=True)
+commandLineLongFlags = [
+"photos=",
+"maxPhotoDimension=",
+"featureExtractor=",
+"photoScalingFactor=",
+"checkCameraDatabase"
+]
+exifAttrs = set(["Model", "Make", "ExifImageWidth", "ExifImageHeight", "FocalLength"])
 
 
 class OsmBundler():
@@ -53,6 +62,10 @@ class OsmBundler():
     # information about each processed photo is stored in the following dictionary
     # photo file name in self.workDir is used as the key in this dictionary
     photoDict = {}
+    
+    featureExtractionNeeded = True
+    
+    photoScalingFactor = 0
 
     def __init__(self):
         for attr in dir(defaults):
@@ -83,20 +96,36 @@ class OsmBundler():
             self.printHelpExit()
 
         for opt,val in opts:
-            if opt=="--photos":
+            opt = opt[2:]
+            if opt=="photos":
                 self.photosArg = val
-            elif opt=="--maxPhotoDimension":
+            elif opt=="maxPhotoDimension":
                 if val.isdigit() and int(val)>0: self.maxPhotoDimension = int(val)
-            elif opt=="--matchingEngine":
+            elif opt=="photoScalingFactor":
+                try:
+                    val = float(val)
+                    if val>0 and val<1: self.photoScalingFactor = val
+                except:
+                    # do nothing
+                    pass
+            elif opt=="matchingEngine":
                 self.matchingEngine = val
-            elif opt=="--featureExtractor":
+            elif opt=="featureExtractor":
                 self.featureExtractor = val
-            elif opt=="--help":
+            elif opt=="checkCameraDatabase":
+                if not self.photosArg:
+                    try:
+                        self.photosArg = opt["--photos"]
+                    except:
+                        self.printHelpExit()
+                self.checkCamerasInDatabase()
+                sys.exit(2)
+            elif opt=="help":
                 self.printHelpExit()
         
         if self.photosArg=="": self.printHelpExit()
 
-    def preparePhotos(self):
+    def preparePhotos(self, *kargs, **kwargs):
         # open each photo, resize, convert to pgm, copy it to self.workDir and calculate focal distance
         # conversion to pgm is performed by PIL library
         # EXIF reading is performed by PIL library
@@ -107,14 +136,17 @@ class OsmBundler():
         
         # open list of photos with focal distances for bundler input
         self.bundlerListFile = open(os.path.join(self.workDir,bundlerListFileName), "w")
-        
-        # open list of files with extracted features
-        if self.matchingEngine.featureExtractionNeeded:
+
+        # check if need to do feature extraction
+        if ('featureExtractionNeeded' in kwargs and kwargs['featureExtractionNeeded']==False) or self.matchingEngine.featureExtractionNeeded==False:
+            self.featureExtractionNeeded = False
+        elif self.matchingEngine.featureExtractionNeeded:
+            # open list of files with extracted features
             self.featuresListFile = open(os.path.join(self.workDir,self.matchingEngine.featuresListFileName), "w")
 
         if os.path.isdir(self.photosArg):
             # directory with images
-            photos=[f for f in os.listdir(self.photosArg) if os.path.isfile(os.path.join(self.photosArg, f)) and os.path.splitext(f)[1].lower()==".jpg"]
+            photos = getPhotosFromDirectory(self.photosArg)
             if len(photos)<3: raise Exception, "The directory with images should contain at least 3 .jpg photos"
             for photo in photos:
                 photoInfo = dict(dirname=self.photosArg, basename=photo)
@@ -139,6 +171,38 @@ class OsmBundler():
         self.dbCursor.close()
 
 
+    def checkCamerasInDatabase(self):
+        # open connection to cameras database
+        conn = sqlite3.connect(camerasDatabase)
+        self.dbCursor = conn.cursor()
+    
+        if os.path.isdir(self.photosArg):
+            # directory with images
+            photos = getPhotosFromDirectory(self.photosArg)
+            for photo in photos:
+                self.checkCameraInDatabase( os.path.join(self.photosArg, photo) )
+        elif os.path.isfile(self.photosArg):
+            # a file with a list of images
+            photosFile = open(self.photosArg)
+            for photo in photosFile:
+                photo = photo.rstrip()
+                if os.path.isfile(photo):
+                    self.checkCameraInDatabase(photo)
+            photosFile.close()
+
+        self.dbCursor.close()
+
+
+    def checkCameraInDatabase(self, photoPath):
+        photoHandle = Image.open(photoPath)
+        exif = self._getExif(photoHandle)
+        if 'Make' in exif and 'Model' in exif:
+            exifMake = exif['Make'].strip()
+            exifModel = exif['Model'].strip()
+            ccdWidth = self.getCcdWidthFromDatabase(exifMake, exifModel)
+            print exifMake, exifModel, ccdWidth
+
+
     def _preparePhoto(self, photoInfo):
         photo = photoInfo['basename']
         photoDir = photoInfo['dirname']
@@ -146,7 +210,6 @@ class OsmBundler():
         inputFileName = os.path.join(photoDir, photo)
         photo = self._getPhotoCopyName(photo)
         outputFileNameJpg = "%s.jpg" % os.path.join(self.workDir, photo)
-        outputFileNamePgm = "%s.pgm" % outputFileNameJpg
         # open photo
         photoHandle = Image.open(inputFileName)
         # get EXIF information as a dictionary
@@ -154,10 +217,14 @@ class OsmBundler():
         self._calculateFocalDistance(photo, photoInfo, exif)
         
         # resize photo if necessary
-        maxDimension = photoHandle.size[0]
-        if photoHandle.size[1]>maxDimension: maxDimension = photoHandle.size[1]
-        if maxDimension > self.maxPhotoDimension:
-            scale = float(self.maxPhotoDimension)/float(maxDimension)
+        # self.photoScalingFactor takes precedence over self.maxPhotoDimension
+        scale = 0
+        if self.photoScalingFactor: scale = self.photoScalingFactor
+        else:
+            maxDimension = photoHandle.size[0]
+            if photoHandle.size[1]>maxDimension: maxDimension = photoHandle.size[1]
+            if maxDimension > self.maxPhotoDimension: scale = float(self.maxPhotoDimension)/float(maxDimension)
+        if scale > 0:
             newWidth = int(scale * photoHandle.size[0])
             newHeight = int(scale * photoHandle.size[1])
             photoHandle = photoHandle.resize((newWidth, newHeight))
@@ -167,14 +234,15 @@ class OsmBundler():
         photoInfo['height'] = photoHandle.size[1]
         
         photoHandle.save(outputFileNameJpg)
-        photoHandle.convert("L").save(outputFileNamePgm)
         
         # put photoInfo to self.photoDict
         self.photoDict[photo] = photoInfo
-        
-        if self.matchingEngine.featureExtractionNeeded:
+
+        if self.featureExtractionNeeded:
+            outputFileNamePgm = "%s.pgm" % outputFileNameJpg
+            photoHandle.convert("L").save(outputFileNamePgm)
             self.extractFeatures(photo)
-        os.remove(outputFileNamePgm)
+            os.remove(outputFileNamePgm)
 
 
     def _getPhotoCopyName(self, photo):
@@ -203,9 +271,8 @@ class OsmBundler():
     def _calculateFocalDistance(self, photo, photoInfo, exif):
         hasFocal = False
         if 'Make' in exif and 'Model' in exif:
-            # check if have camera entry in the database
-            self.dbCursor.execute("select ccd_width from cameras where make=? and model=?", (exif['Make'].strip(),exif['Model'].strip()))
-            ccdWidth = self.dbCursor.fetchone()
+            # check if we have camera entry in the database
+            ccdWidth = self.getCcdWidthFromDatabase(exif['Make'].strip(),exif['Model'].strip())
             if ccdWidth:
                 if 'FocalLength' in exif and 'ExifImageWidth' in exif and 'ExifImageHeight' in exif:
                     focalLength = float(exif['FocalLength'])
@@ -280,6 +347,11 @@ class OsmBundler():
         helpFile = open(os.path.join(distrPath, "osmbundler/help.txt"), "r")
         print helpFile.read()
         helpFile.close()
+
+    # a helper function to get CCD width from sqlite database
+    def getCcdWidthFromDatabase(self, exifMake, exifModel):
+        self.dbCursor.execute("select ccd_width from cameras where make=? and model=?", (exifMake, exifModel))
+        return self.dbCursor.fetchone()
 
 
 # service function: get path of an executable (.exe suffix is added if we are on Windows)
