@@ -36,6 +36,11 @@ commandLineLongFlags = [
 ]
 exifAttrs = set(["Model", "Make", "ExifImageWidth", "ExifImageHeight", "FocalLength"])
 
+class ZeroValueException(Exception):
+    """Raised if zero value has been encountered
+    Used to process user input
+    """
+
 
 class OsmBundler():
 
@@ -190,6 +195,7 @@ class OsmBundler():
                     self.checkCameraInDatabase(photo)
             photosFile.close()
 
+        conn.commit()
         self.dbCursor.close()
 
 
@@ -200,7 +206,25 @@ class OsmBundler():
             exifMake = exif['Make'].strip()
             exifModel = exif['Model'].strip()
             ccdWidth = self.getCcdWidthFromDatabase(exifMake, exifModel)
-            print exifMake, exifModel, ccdWidth
+            if ccdWidth==None:
+                while True:
+                    print "Type CCD width in mm for the camera %s, %s. Press Enter to skip the camera." % (exifMake, exifModel)
+                    userInput = raw_input("CCD width in mm: ")
+                    # Enter key was pressed
+                    if not userInput: return
+                    try:
+                        ccdWidth = float(userInput)
+                        if ccdWidth==0: raise ZeroValueException
+                        self.dbCursor.execute("insert into cameras(make, model, ccd_width, source) values(?, ?, ?, 2)", (exifMake, exifModel, ccdWidth))
+                    except ZeroValueException:
+                        print "\nCCD width can not be equal to zero."
+                    except ValueError:
+                        print "\nIncorrect value for the CCD width. Please enter CCD width in mm."
+                    except:
+                        print "\nCan not insert CCD width to the database."
+                    else:
+                        print "CCD width %s for the cameras %s,%s has been successively inserted to the database" % (ccdWidth, exifMake, exifModel)
+                        return
 
 
     def _preparePhoto(self, photoInfo):
