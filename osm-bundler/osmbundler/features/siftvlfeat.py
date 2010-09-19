@@ -23,7 +23,10 @@ class VlfeatSift(Sift):
         loweGzipFile.write("%s 128\n" % numFeatures)
         for featureString in featureStrings:
             features = featureString.split()
-            features[0] = str(photoInfo['width']-float(features[0])) # Coordinate system correction
+            # swap features[0] and features[1]
+            tmp = features[0]
+            features[0] = features[1]
+            features[1] = tmp
             i1 = 0
             for i2 in (4,24,44,64,84,104,124,132):
                 loweGzipFile.write("%s\n" % " ".join(features[i1:i2]))
