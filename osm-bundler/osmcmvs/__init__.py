@@ -108,12 +108,18 @@ class OsmCmvs():
       clustersize = "4" # TODO make this value customizable or dynamic ?
       subprocess.call([cmvsExecutable, "./", clustersize])
       subprocess.call([genOptionExecutable, "./"])
-      #find all the option-XXX files and run PMVS2 on it
       
-      for root, dirs, files in os.walk("./"):
-        for file in files:
-          if "option-" in file:
-            subprocess.call([pmvsExecutable, "./", file])
+      #find all the option-XXX files and run PMVS2 on it
+      # three conditions are checked in the list comprehension below:
+      # 1) f is file
+      # 2) f don't have extension
+      # 3) f starts with "option-"
+      for file in [f for f in os.listdir("./") if os.path.isfile(os.path.join("./", f)) and os.path.splitext(f)[1]=='' and "option-" in f]:
+	subprocess.call([pmvsExecutable, "./", file])
+      #for root, dirs, files in os.walk("./"):
+      #  for file in files:
+      #    if "option-" in file:
+      #      subprocess.call([pmvsExecutable, "./", file])
 
         
     def doPMVS(self, path, optionFile):
