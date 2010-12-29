@@ -7,5 +7,7 @@ Using CMVS could accelerate the reconstruction :
 
 --bundlerOutputPath=<path to the result of osm-bundler>
 	The only obligatory option
+--ClusterToCompute=<Number of cluster that CMVS should compute>
+	If infinite loop occur. Stop the process and try a different value.
 --help
 	Print help and exit

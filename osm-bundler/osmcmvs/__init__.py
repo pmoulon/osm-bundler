@@ -9,7 +9,7 @@ def getExecPath(dir, fileName):
 distrPath = os.path.dirname( os.path.abspath(sys.argv[0]) )
 
 pmvsExecutable = getExecPath(distrPath, "software/pmvs/bin/pmvs2")
-cmvsExecutable = getExecPath(distrPath, "software/pmvs/bin/cmvs")
+cmvsExecutable = getExecPath(distrPath, "software/cmvs/bin/cmvs")
 genOptionExecutable = getExecPath(distrPath, "software/pmvs/bin/genOption")
 
 bundlerBinPath = ''
@@ -22,7 +22,7 @@ Bundle2VisExecutable = getExecPath(bundlerBinPath, "Bundle2Vis")
 
 bundlerListFileName = "list.txt"
 
-commandLineLongFlags = ["bundlerOutputPath="]
+commandLineLongFlags = ["bundlerOutputPath=", "ClusterToCompute="]
 
 
 class OsmCmvs():
@@ -30,6 +30,8 @@ class OsmCmvs():
     currentDir = ""
 
     workDir = ""
+	
+    clusterToCompute = 1
     
     # value of command line argument --bundlerOutputPath=<..>
     bundleOutArg = ""
@@ -56,6 +58,8 @@ class OsmCmvs():
         for opt,val in opts:
             if opt=="--bundlerOutputPath":
                 self.bundleOutArg = val
+            elif opt=="--ClusterToCompute":
+                if val.isdigit() and int(val)>0: self.clusterToCompute = int(val)
             elif opt=="--help":
                 self.printHelpExit()
         
@@ -105,8 +109,7 @@ class OsmCmvs():
     
     def doCMVS(self):
       os.chdir(os.path.join(self.workDir,"pmvs"))
-      clustersize = "4" # TODO make this value customizable or dynamic ?
-      subprocess.call([cmvsExecutable, "./", clustersize])
+      subprocess.call([cmvsExecutable, "./", str(self.clusterToCompute)])
       subprocess.call([genOptionExecutable, "./"])
       
       #find all the option-XXX files and run PMVS2 on it
