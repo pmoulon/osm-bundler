@@ -5,3 +5,7 @@ The core tools in our system are
 Bundler
 PMVS
 CMVS
+
+License GPLv3
+
+automatic back-up from https://code.google.com/p/osm-bundler/
